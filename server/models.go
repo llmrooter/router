@@ -82,6 +82,7 @@ type UsageLog struct {
     Model      string    `gorm:"size:255" json:"model"`
     Status     int       `json:"status"`
     LatencyMs  int64     `json:"latency_ms"`
+    Messages   int       `json:"messages"`
     TokensIn   int       `json:"tokens_in"`
     TokensOut  int       `json:"tokens_out"`
     Cost       float64   `json:"cost"`

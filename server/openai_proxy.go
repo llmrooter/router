@@ -76,6 +76,10 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
     app := getApp(c)
     user, key, err := getUserFromAuth(c)
     if err != nil { return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"}) }
+    keyID := uint(0)
+    if key != nil {
+        keyID = key.ID
+    }
 
     // Resolve model to a provider: only from pulled cache
     var p Provider
@@ -98,6 +102,15 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
     }
 
+    // Determine message count if present in body
+    msgCount := 0
+    var payload map[string]any
+    if err := json.Unmarshal(body, &payload); err == nil {
+        if v, ok := payload["messages"]; ok {
+            if arr, ok := v.([]any); ok { msgCount = len(arr) }
+        }
+    }
+
     // build request to provider
     started := time.Now()
     url := strings.TrimSuffix(p.BaseURL, "/") + endpoint
@@ -107,7 +120,7 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
 
     resp, err := http.DefaultClient.Do(req)
     if err != nil {
-        logUsage(app, user.ID, key.ID, p.ID, model, 0, started, 0, 0)
+        logUsage(app, user.ID, keyID, p.ID, model, 0, started, msgCount, 0, 0)
         return c.JSON(http.StatusBadGateway, echo.Map{"error": "provider error"})
     }
     defer resp.Body.Close()
@@ -129,7 +142,8 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
                 break
             }
         }
-        // No usage logging for streaming for now
+        // Log minimal usage for streaming (tokens unknown)
+        logUsage(app, user.ID, keyID, p.ID, model, resp.StatusCode, started, msgCount, 0, 0)
         return nil
     }
 
@@ -144,7 +158,7 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
         } `json:"usage"`
     }
     _ = json.Unmarshal(b, &usage)
-    logUsage(app, user.ID, key.ID, p.ID, model, resp.StatusCode, started, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+    logUsage(app, user.ID, keyID, p.ID, model, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
 
     // mirror status code and body
     return c.Blob(resp.StatusCode, "application/json", b)

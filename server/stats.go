@@ -12,6 +12,7 @@ type statsResp struct {
     AvgMs    int64 `json:"avg_ms"`
     TokensIn int64 `json:"tokens_in"`
     TokensOut int64 `json:"tokens_out"`
+    Messages int64 `json:"messages"`
 }
 
 func registerStatsRoutes(g *echo.Group) {
@@ -26,23 +27,25 @@ func statsMe(c echo.Context) error {
     var count int64
     var totalMs int64
     var inT, outT int64
-    rows, err := app.DB.Model(&UsageLog{}).Select("latency_ms, tokens_in, tokens_out").Where("user_id = ?", u.ID).Rows()
+    var msgs int64
+    rows, err := app.DB.Model(&UsageLog{}).Select("latency_ms, tokens_in, tokens_out, messages").Where("user_id = ?", u.ID).Rows()
     if err != nil {
         return c.JSON(http.StatusInternalServerError, echo.Map{"error": "db error"})
     }
     defer rows.Close()
     for rows.Next() {
         var ms int64
-        var tin, tout int
-        _ = rows.Scan(&ms, &tin, &tout)
+        var tin, tout, m int
+        _ = rows.Scan(&ms, &tin, &tout, &m)
         count++
         totalMs += ms
         inT += int64(tin)
         outT += int64(tout)
+        msgs += int64(m)
     }
     avg := int64(0)
     if count > 0 { avg = totalMs / count }
-    return c.JSON(http.StatusOK, statsResp{Requests: count, AvgMs: avg, TokensIn: inT, TokensOut: outT})
+    return c.JSON(http.StatusOK, statsResp{Requests: count, AvgMs: avg, TokensIn: inT, TokensOut: outT, Messages: msgs})
 }
 
 func adminStatsUser(c echo.Context) error {
@@ -51,27 +54,29 @@ func adminStatsUser(c echo.Context) error {
     var count int64
     var totalMs int64
     var inT, outT int64
-    rows, err := app.DB.Model(&UsageLog{}).Select("latency_ms, tokens_in, tokens_out").Where("user_id = ?", id).Rows()
+    var msgs int64
+    rows, err := app.DB.Model(&UsageLog{}).Select("latency_ms, tokens_in, tokens_out, messages").Where("user_id = ?", id).Rows()
     if err != nil {
         return c.JSON(http.StatusInternalServerError, echo.Map{"error": "db error"})
     }
     defer rows.Close()
     for rows.Next() {
         var ms int64
-        var tin, tout int
-        _ = rows.Scan(&ms, &tin, &tout)
+        var tin, tout, m int
+        _ = rows.Scan(&ms, &tin, &tout, &m)
         count++
         totalMs += ms
         inT += int64(tin)
         outT += int64(tout)
+        msgs += int64(m)
     }
     avg := int64(0)
     if count > 0 { avg = totalMs / count }
-    return c.JSON(http.StatusOK, statsResp{Requests: count, AvgMs: avg, TokensIn: inT, TokensOut: outT})
+    return c.JSON(http.StatusOK, statsResp{Requests: count, AvgMs: avg, TokensIn: inT, TokensOut: outT, Messages: msgs})
 }
 
 // Convenience for usage logs
-func logUsage(app *App, userID uint, keyID uint, providerID uint, model string, status int, started time.Time, promptTok, compTok int) {
+func logUsage(app *App, userID uint, keyID uint, providerID uint, model string, status int, started time.Time, messages, promptTok, compTok int) {
     took := time.Since(started).Milliseconds()
     _ = app.DB.Create(&UsageLog{
         UserID:     userID,
@@ -80,6 +85,7 @@ func logUsage(app *App, userID uint, keyID uint, providerID uint, model string, 
         Model:      model,
         Status:     status,
         LatencyMs:  took,
+        Messages:   messages,
         TokensIn:   promptTok,
         TokensOut:  compTok,
     }).Error

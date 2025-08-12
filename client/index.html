@@ -4,10 +4,51 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LLM Router</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/typography@0.5.10"></script>
+    <!-- Highlight.js for code blocks (light/dark themes) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'media',
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                DEFAULT: '#4f46e5', // indigo-600
+                dark: '#4338ca'     // indigo-700
+              }
+            },
+            boxShadow: {
+              card: '0 1px 2px rgba(0,0,0,0.06), 0 10px 24px rgba(0,0,0,0.06)'
+            },
+            borderRadius: { xl: '0.75rem', '2xl': '1rem' }
+          }
+        },
+        plugins: [typography]
+      }
+    </script>
+    <style>
+      html{color-scheme:light dark}
+      /* Chat markdown spacing: add breathing room around separators and blocks */
+      .prose hr{margin-top:0.75rem;margin-bottom:0.75rem;border-color:#e2e8f0}
+      @media (prefers-color-scheme: dark){.prose hr{border-color:#334155}}
+      .prose pre{margin-top:0.75rem;margin-bottom:0.75rem}
+      .prose blockquote{margin-top:0.75rem;margin-bottom:0.75rem}
+      /* Slightly increase line spacing for readability */
+      .prose p,.prose li,.prose code,.prose pre,.prose td,.prose th{line-height:1.65}
+      /* Lists: bullets, padding, and tighter list item spacing */
+      .prose ul{list-style:disc;padding-left:1.25rem;margin-top:.5rem;margin-bottom:.5rem}
+      .prose ol{list-style:decimal;padding-left:1.25rem;margin-top:.5rem;margin-bottom:.5rem}
+      .prose li{margin:.25rem 0}
+      .prose li>p{margin:0}
+      .prose :is(h1,h2,h3,h4,h5,h6){scroll-margin-top:5rem}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
   </html>
-

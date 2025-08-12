@@ -27,6 +27,11 @@ func sessionChatCompletions(c echo.Context) error {
     if model == "" {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "model required"})
     }
+    // Count messages if present
+    msgCount := 0
+    if v, ok := payload["messages"]; ok {
+        if arr, ok := v.([]any); ok { msgCount = len(arr) }
+    }
     payload["stream"] = false
     body, _ := json.Marshal(payload)
 
@@ -60,7 +65,7 @@ func sessionChatCompletions(c echo.Context) error {
 
     resp, err := http.DefaultClient.Do(req)
     if err != nil {
-        logUsage(app, user.ID, 0, p.ID, model, 0, started, 0, 0)
+        logUsage(app, user.ID, 0, p.ID, model, 0, started, msgCount, 0, 0)
         return c.JSON(http.StatusBadGateway, echo.Map{"error": "provider error"})
     }
     defer resp.Body.Close()
@@ -73,8 +78,7 @@ func sessionChatCompletions(c echo.Context) error {
         } `json:"usage"`
     }
     _ = json.Unmarshal(b, &usage)
-    logUsage(app, user.ID, 0, p.ID, model, resp.StatusCode, started, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+    logUsage(app, user.ID, 0, p.ID, model, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
 
     return c.Blob(resp.StatusCode, "application/json", b)
 }
-

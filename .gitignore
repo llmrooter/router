@@ -14,3 +14,5 @@ client/.vite/
 # OS
 .DS_Store
 
+.*/
+
