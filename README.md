@@ -45,7 +45,7 @@ LLMRouter provides a Go backend and React admin UI for routing OpenAI‑style re
 ## Documentation
 
 - API Reference: [docs/api.md](docs/api.md)
-- Setup guide (coming soon): [docs/setup.md](docs/setup.md)
+- Setup guide: [docs/setup.md](docs/setup.md)
 - Configuration (coming soon): [docs/configuration.md](docs/configuration.md)
 - Admin UI (coming soon): [docs/admin-ui.md](docs/admin-ui.md)
 
