@@ -14,5 +14,8 @@ client/.vite/
 # OS
 .DS_Store
 
+# Config
+config.yml
+
 .*/
 

@@ -22,4 +22,3 @@ admin:
   # Initial admin credentials when bootstrapping an empty DB
   seed_user: admin
   seed_password: admin
-
