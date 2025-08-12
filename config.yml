@@ -1,0 +1,25 @@
+server:
+  # HTTP port to listen on
+  port: "8080"
+  # When true, allows running without client/dist
+  dev: false
+  # Where the built client is located
+  static_dir: client/dist
+  # Change this in production
+  jwt_secret: dev-insecure-secret-change-me
+  # Optional CORS allowlist (empty means *)
+  cors_allow_origins: []
+
+database:
+  # postgres | sqlite
+  driver: sqlite
+  # Postgres DSN when driver=postgres (or use env DATABASE_URL)
+  dsn: ""
+  # SQLite file path when driver=sqlite (or env SQLITE_PATH)
+  sqlite_path: data/app.db
+
+admin:
+  # Initial admin credentials when bootstrapping an empty DB
+  seed_user: admin
+  seed_password: admin
+

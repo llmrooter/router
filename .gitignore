@@ -1,0 +1,16 @@
+# Go
+llmrouter
+*.exe
+*.out
+
+# Data
+data/
+
+# Node
+client/node_modules/
+client/dist/
+client/.vite/
+
+# OS
+.DS_Store
+
