@@ -119,7 +119,7 @@ If `client/dist` is present, the server will serve the SPA with an SPA fallback 
 - SQLite: default path `data/app.db` is created automatically; `AutoMigrate` runs on startup for all models.
 - Postgres: set `database.driver: postgres` and `database.dsn`, or just set `DATABASE_URL` env. Connection pool defaults are tuned conservatively.
 
-> Postgres has not been tested as much as SQLite, this is planned and is in the [TODO.md](TODO.md)
+> Postgres has not been tested as much as SQLite, this is planned and is in the [TODO.md](../TODO.md)
 
 ## Auth and First Login
 
