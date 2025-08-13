@@ -13,8 +13,7 @@ A list of planned tasks and priorities for the project.
 
 ## Medium Priority
 
-* *No tasks currently listed.*
-  *(Check back later — priorities may change.)*
+* **Anthropic support** — Adding Anthropic API support to providers.
 
 ---
 

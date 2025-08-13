@@ -23,9 +23,13 @@ func sessionChatCompletions(c echo.Context) error {
     if err := json.NewDecoder(c.Request().Body).Decode(&payload); err != nil {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid json"})
     }
-    model, _ := payload["model"].(string)
-    if model == "" {
+    clientModel, _ := payload["model"].(string)
+    if clientModel == "" {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "model required"})
+    }
+    // If router/ fallback is requested, delegate to router handler (non-stream)
+    if strings.HasPrefix(strings.ToLower(clientModel), "router/") {
+        return handleRouterNonStream(c, app, clientModel, payload, "/chat/completions")
     }
     // Count messages if present
     msgCount := 0
@@ -35,26 +39,12 @@ func sessionChatCompletions(c echo.Context) error {
     payload["stream"] = false
     body, _ := json.Marshal(payload)
 
-    // Resolve provider by pulled cache across enabled providers
-    var providers []Provider
-    if err := app.DB.Where("enabled = ?", true).Find(&providers).Error; err != nil {
-        return c.JSON(http.StatusInternalServerError, echo.Map{"error": "db error"})
-    }
-    var p Provider
-    found := false
-    for _, cand := range providers {
-        for _, name := range app.GetPulled(cand.ID) {
-            if name == model {
-                p = cand
-                found = true
-                break
-            }
-        }
-        if found { break }
-    }
-    if !found {
+    // Resolve provider/model strictly
+    p, raw, ok := resolveQualifiedModel(app, clientModel)
+    if !ok {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
     }
+    payload["model"] = raw
 
     // Build request to provider
     started := time.Now()
@@ -65,7 +55,7 @@ func sessionChatCompletions(c echo.Context) error {
 
     resp, err := http.DefaultClient.Do(req)
     if err != nil {
-        logUsage(app, user.ID, 0, p.ID, model, 0, started, msgCount, 0, 0)
+        logUsage(app, user.ID, 0, p.ID, clientModel, 0, started, msgCount, 0, 0)
         return c.JSON(http.StatusBadGateway, echo.Map{"error": "provider error"})
     }
     defer resp.Body.Close()
@@ -78,7 +68,7 @@ func sessionChatCompletions(c echo.Context) error {
         } `json:"usage"`
     }
     _ = json.Unmarshal(b, &usage)
-    logUsage(app, user.ID, 0, p.ID, model, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+    logUsage(app, user.ID, 0, p.ID, clientModel, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
 
     return c.Blob(resp.StatusCode, "application/json", b)
 }

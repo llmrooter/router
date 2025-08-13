@@ -74,6 +74,7 @@ func Boot(e *echo.Echo, cfg *Config) error {
     registerKeyRoutes(api)
     registerProviderRoutes(api)
     registerModelRoutes(api)
+    registerFallbackRoutes(api)
     registerStatsRoutes(api)
     registerSessionChatRoutes(api)
 

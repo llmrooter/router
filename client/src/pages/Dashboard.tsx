@@ -32,6 +32,23 @@ export default function Dashboard() {
     load()
   }, [])
 
+  const origin = (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080')
+  const curlExample = `curl -sS -X POST \\
+  "${origin}/api/v1/chat/completions" \\
+  -H "Authorization: Bearer sk_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "openai/gpt-4.1",
+    "messages": [{"role":"user","content":"Hello!"}]
+  }'`
+
+  React.useEffect(() => {
+    const el = document.getElementById('quick-curl')?.querySelector('code')
+    if (el) {
+      el.textContent = curlExample
+    }
+  }, [curlExample])
+
   return (
     <div>
       <div className="flex items-end justify-between mb-3">
@@ -85,13 +102,13 @@ export default function Dashboard() {
             <h3 className="font-medium">Quick start</h3>
             <Link to="/keys" className="text-sm text-indigo-600 hover:text-indigo-700">Manage keys →</Link>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">Use OpenAI-compatible endpoints at <code>/api/v1</code>.</p>
-          <pre className="text-xs overflow-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3"><code>{`curl -X POST \\
-  '/api/v1/chat/completions' \\
-  -H 'Authorization: Bearer sk_your_key' \\
-  -H 'Content-Type: application/json' \\
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">Use OpenAI-compatible endpoints at <code>/api/v1</code>. Model must be <code>provider/model</code> (e.g., <code>openai/gpt-4.1</code>). URL below uses your current origin.</p>
+          <pre id="quick-curl" className="text-xs overflow-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-3"><code>{`curl -sS -X POST \
+  http://localhost:8080/api/v1/chat/completions \
+  -H "Authorization: Bearer sk_your_key" \
+  -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4o",
+    "model": "openai/gpt-4.1",
     "messages": [{"role":"user","content":"Hello!"}]
   }'`}</code></pre>
           <div className="mt-3 flex flex-wrap gap-2">

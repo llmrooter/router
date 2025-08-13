@@ -139,7 +139,30 @@ This document describes both the administrative JSON API under `/api` and the Op
 
 - GET `/api/models`
   - Auth: session
-  - Success: `200` array of `{ "provider_id": number, "provider_name": string, "name": string }` representing models pulled from all enabled providers.
+  - Success: `200` array of `{ "provider_id": number, "provider_name": string, "name": string }` representing models pulled from all enabled providers. Includes router entries as `{ provider_name: "router", name: "<route>" }`.
+
+### Fallbacks (Admin)
+
+- GET `/api/fallbacks`
+  - Auth: admin
+  - Returns: all fallback routes with ordered targets.
+
+- POST `/api/fallbacks`
+  - Auth: admin
+  - Body: `{ name: string, enabled: boolean, targets?: string[] }` where `targets` are qualified `provider/model` strings in priority order.
+  - Returns: created route with targets.
+
+- GET `/api/fallbacks/:id`
+  - Auth: admin
+  - Returns: route with ordered targets.
+
+- PUT `/api/fallbacks/:id`
+  - Auth: admin
+  - Body: may include `name`, `enabled`, and `targets` (array of qualified `provider/model` that replaces existing and determines new order).
+
+- DELETE `/api/fallbacks/:id`
+  - Auth: admin
+  - Deletes the route and its targets.
 
 ### Stats
 
@@ -155,9 +178,12 @@ This document describes both the administrative JSON API under `/api` and the Op
 
 - POST `/api/chat`
   - Auth: session
-  - Purpose: Convenience non‑OpenAI endpoint that forwards a chat completion request to the selected provider.
-  - Body: OpenAI Chat Completions‑style payload. Required: `model: string`. Common fields: `messages: [ ... ]`.
-  - Behavior: Resolves provider by matching `model` against the runtime model cache; forwards to `{provider.base_url}/chat/completions` with `stream: false`.
+  - Purpose: Convenience non‑OpenAI endpoint that forwards a chat completion request to the selected provider or router fallback.
+  - Body: OpenAI Chat Completions‑style payload. Required: `model: string`.
+    - Accepts `provider/model` (lowercase provider) or `router/<name>`.
+  - Behavior:
+    - For `provider/model`: resolves provider and forwards to `{provider.base_url}/chat/completions` with `stream: false`.
+    - For `router/<name>`: sequentially tries each configured target; on network/5xx errors it falls back to the next target; 4xx errors are returned immediately.
   - Success: `200` with upstream JSON body; on failure, mirrors upstream status or returns `400 { "error": "unknown model" }`, `502 { "error": "provider error" }`.
 
 ---
@@ -165,27 +191,27 @@ This document describes both the administrative JSON API under `/api` and the Op
 ## /api/v1 (OpenAI‑Compatible)
 
 - Auth: `Authorization: Bearer <user_api_key>` required; valid session cookie is accepted as fallback.
-- Model resolution: The `model` must exist in the runtime model cache of an enabled provider; otherwise `400 { "error": "unknown model" }`.
+- Model resolution: The `model` must be specified as `provider/model` (provider in lowercase, e.g., `openai/gpt-4.1`) and must exist in the runtime model cache of the named provider; otherwise `400 { "error": "unknown model" }`.
 
 ### GET `/api/v1/models`
 
-- Returns: `200 { "object": "list", "data": [{ "id": string, "object": "model", "owned_by": string }, ...] }`.
+- Returns: `200 { "object": "list", "data": [{ "id": string, "object": "model", "owned_by": string }, ...] }` where `id` is `provider/model`.
 
 ### POST `/api/v1/chat/completions`
 
-- Body: OpenAI Chat Completions JSON payload; required `model: string`.
+- Body: OpenAI Chat Completions JSON payload; required `model: string` in the form `provider/model`.
 - Streaming: If `stream: true`, the server relays upstream Server‑Sent Events as they arrive.
 - Success: Mirrors upstream provider JSON or event stream.
 - Errors: `401 { "error": "unauthorized" }`, `400 { "error": "model required" | "unknown model" }`, or upstream status/body.
 
 ### POST `/api/v1/completions`
 
-- Body: OpenAI Completions JSON payload; required `model: string`.
+- Body: OpenAI Completions JSON payload; required `model: string` in the form `provider/model`.
 - Success/Errors: Same behavior as chat completions (non‑streaming).
 
 ### POST `/api/v1/embeddings`
 
-- Body: OpenAI Embeddings JSON payload; required `model: string`.
+- Body: OpenAI Embeddings JSON payload; required `model: string` in the form `provider/model`.
 - Success/Errors: Mirrors upstream provider response.
 
 ---

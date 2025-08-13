@@ -127,9 +127,9 @@ func refreshProviderModels(c echo.Context) error {
 func deleteProvider(c echo.Context) error {
     app := getApp(c)
     id := c.Param("id")
-    // cascade delete models
-    app.DB.Where("provider_id = ?", id).Delete(&ModelEntry{})
-    if err := app.DB.Delete(&Provider{}, id).Error; err != nil {
+    // hard-delete associated models and provider so name can be reused
+    app.DB.Unscoped().Where("provider_id = ?", id).Delete(&ModelEntry{})
+    if err := app.DB.Unscoped().Delete(&Provider{}, id).Error; err != nil {
         return c.JSON(http.StatusInternalServerError, echo.Map{"error": "db error"})
     }
     if n, err := strconv.ParseUint(id, 10, 64); err == nil {

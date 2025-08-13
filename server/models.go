@@ -89,5 +89,29 @@ type UsageLog struct {
 }
 
 func migrate(db *gorm.DB) error {
-    return db.AutoMigrate(&User{}, &APIKey{}, &Provider{}, &ModelEntry{}, &UsageLog{})
+    return db.AutoMigrate(&User{}, &APIKey{}, &Provider{}, &ModelEntry{}, &UsageLog{}, &FallbackRoute{}, &FallbackTarget{})
+}
+
+// Fallback routing models
+type FallbackRoute struct {
+    ID        uint           `gorm:"primaryKey" json:"id"`
+    CreatedAt time.Time      `json:"created_at"`
+    UpdatedAt time.Time      `json:"updated_at"`
+    DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+    Name      string         `gorm:"size:255;uniqueIndex" json:"name"` // exposed as router/<name>
+    Enabled   bool           `json:"enabled"`
+    Targets   []FallbackTarget `gorm:"foreignKey:RouteID;constraint:OnDelete:CASCADE" json:"targets"`
+}
+
+type FallbackTarget struct {
+    ID          uint           `gorm:"primaryKey" json:"id"`
+    CreatedAt   time.Time      `json:"created_at"`
+    UpdatedAt   time.Time      `json:"updated_at"`
+    DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+    RouteID     uint           `gorm:"index" json:"route_id"`
+    ProviderID  uint           `gorm:"index" json:"provider_id"`
+    // Raw upstream model id for the provider
+    Model       string         `gorm:"size:255" json:"model"`
+    // 0-based priority (lower is higher priority)
+    Position    int            `gorm:"index" json:"position"`
 }

@@ -22,7 +22,7 @@ LLMRouter provides a Go backend and React admin UI for routing OpenAI‑style re
 
 - OpenAI compatibility with provider routing and optional streaming.
 - Providers of type `openai` with configurable `base_url` and `api_key`.
-- Runtime model discovery from `{base_url}/models` cached in memory.
+- Runtime model discovery from `{base_url}/models` cached in memory; client-visible model IDs are `provider/model`.
 - Admin UI to manage users, keys, providers; view usage stats.
 - Usage logging: latency, status, message count, and token usage (if provided by upstream).
 - Authentication: session cookies for `/api`, user API keys for `/api/v1`.

@@ -9,6 +9,7 @@ import (
     "time"
 
     "github.com/labstack/echo/v4"
+    "gorm.io/gorm"
 )
 
 func registerOpenAIRoutes(g *echo.Group) {
@@ -66,13 +67,21 @@ func openaiListModels(c echo.Context) error {
             continue
         }
         for _, name := range names {
-            models = append(models, modelObj{ID: name, Object: "model", OwnedBy: p.Name})
+            qualified := strings.ToLower(p.Name) + "/" + name
+            models = append(models, modelObj{ID: qualified, Object: "model", OwnedBy: p.Name})
+        }
+    }
+    // Add router/ fallbacks
+    var routes []FallbackRoute
+    if err := app.DB.Where("enabled = ?", true).Find(&routes).Error; err == nil {
+        for _, r := range routes {
+            models = append(models, modelObj{ID: "router/" + r.Name, Object: "model", OwnedBy: "router"})
         }
     }
     return c.JSON(http.StatusOK, echo.Map{"object": "list", "data": models})
 }
 
-func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint string, stream bool) error {
+func forwardOpenAIWithStream(c echo.Context, p Provider, clientModel string, upstreamBody []byte, endpoint string, stream bool) error {
     app := getApp(c)
     user, key, err := getUserFromAuth(c)
     if err != nil { return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"}) }
@@ -81,31 +90,10 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
         keyID = key.ID
     }
 
-    // Resolve model to a provider: only from pulled cache
-    var p Provider
-    var providers []Provider
-    if err := app.DB.Where("enabled = ?", true).Find(&providers).Error; err != nil {
-        return c.JSON(http.StatusInternalServerError, echo.Map{"error": "db error"})
-    }
-    found := false
-    for _, cand := range providers {
-        for _, name := range app.GetPulled(cand.ID) {
-            if name == model {
-                p = cand
-                found = true
-                break
-            }
-        }
-        if found { break }
-    }
-    if !found {
-        return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
-    }
-
     // Determine message count if present in body
     msgCount := 0
     var payload map[string]any
-    if err := json.Unmarshal(body, &payload); err == nil {
+    if err := json.Unmarshal(upstreamBody, &payload); err == nil {
         if v, ok := payload["messages"]; ok {
             if arr, ok := v.([]any); ok { msgCount = len(arr) }
         }
@@ -114,13 +102,13 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
     // build request to provider
     started := time.Now()
     url := strings.TrimSuffix(p.BaseURL, "/") + endpoint
-    req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+    req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(upstreamBody))
     req.Header.Set("Content-Type", "application/json")
     if p.APIKey != "" { req.Header.Set("Authorization", "Bearer "+p.APIKey) }
 
     resp, err := http.DefaultClient.Do(req)
     if err != nil {
-        logUsage(app, user.ID, keyID, p.ID, model, 0, started, msgCount, 0, 0)
+        logUsage(app, user.ID, keyID, p.ID, clientModel, 0, started, msgCount, 0, 0)
         return c.JSON(http.StatusBadGateway, echo.Map{"error": "provider error"})
     }
     defer resp.Body.Close()
@@ -143,7 +131,7 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
             }
         }
         // Log minimal usage for streaming (tokens unknown)
-        logUsage(app, user.ID, keyID, p.ID, model, resp.StatusCode, started, msgCount, 0, 0)
+        logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, 0, 0)
         return nil
     }
 
@@ -158,10 +146,135 @@ func forwardOpenAIWithStream(c echo.Context, model string, body []byte, endpoint
         } `json:"usage"`
     }
     _ = json.Unmarshal(b, &usage)
-    logUsage(app, user.ID, keyID, p.ID, model, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+    logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
 
     // mirror status code and body
     return c.Blob(resp.StatusCode, "application/json", b)
+}
+
+// Router fallback helpers
+func handleRouterChat(c echo.Context, app *App, clientModel string, payload map[string]any) error {
+    user, key, err := getUserFromAuth(c)
+    if err != nil { return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"}) }
+    keyID := uint(0); if key != nil { keyID = key.ID }
+    stream := false
+    if s, ok := payload["stream"].(bool); ok { stream = s }
+    // resolve route
+    name := strings.TrimPrefix(strings.ToLower(clientModel), "router/")
+    var route FallbackRoute
+    if err := app.DB.Preload("Targets", func(db *gorm.DB) *gorm.DB { return db.Order("position ASC, id ASC") }).Where("enabled = ? AND name = ?", true, name).First(&route).Error; err != nil {
+        return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
+    }
+    // message count for logging
+    msgCount := 0
+    if v, ok := payload["messages"]; ok { if arr, ok := v.([]any); ok { msgCount = len(arr) } }
+
+    body, _ := json.Marshal(payload)
+    var lastBody []byte
+    var lastStatus int
+    for _, t := range route.Targets {
+        // confirm provider still enabled and model available in cache
+        var p Provider
+        if err := app.DB.Where("id = ? AND enabled = ?", t.ProviderID, true).First(&p).Error; err != nil { continue }
+        // replace model
+        var pl map[string]any
+        _ = json.Unmarshal(body, &pl)
+        pl["model"] = t.Model
+        upBody, _ := json.Marshal(pl)
+        started := time.Now()
+        url := strings.TrimSuffix(p.BaseURL, "/") + "/chat/completions"
+        req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(upBody))
+        req.Header.Set("Content-Type", "application/json")
+        if p.APIKey != "" { req.Header.Set("Authorization", "Bearer "+p.APIKey) }
+        resp, rerr := http.DefaultClient.Do(req)
+        if rerr != nil {
+            logUsage(app, user.ID, keyID, p.ID, clientModel, 0, started, msgCount, 0, 0)
+            continue
+        }
+        defer resp.Body.Close()
+        // fallback on 5xx; 4xx is returned to client
+        if stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+            c.Response().Header().Set("Content-Type", "text/event-stream")
+            c.Response().WriteHeader(http.StatusOK)
+            buf := make([]byte, 4096)
+            for {
+                n, err := resp.Body.Read(buf)
+                if n > 0 { if _, werr := c.Response().Write(buf[:n]); werr != nil { break }; c.Response().Flush() }
+                if err != nil { break }
+            }
+            logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, 0, 0)
+            return nil
+        }
+        b, _ := io.ReadAll(resp.Body)
+        if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+            var usage struct{ Usage struct{ PromptTokens int `json:"prompt_tokens"`; CompletionTokens int `json:"completion_tokens"` } `json:"usage"` }
+            _ = json.Unmarshal(b, &usage)
+            logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+            return c.Blob(resp.StatusCode, "application/json", b)
+        }
+        if resp.StatusCode >= 500 {
+            // try next
+            lastBody = b; lastStatus = resp.StatusCode
+            logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, 0, 0)
+            continue
+        }
+        // 4xx: return immediately
+        logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, 0, 0)
+        return c.Blob(resp.StatusCode, "application/json", b)
+    }
+    // exhausted
+    if lastBody != nil && lastStatus != 0 { return c.Blob(lastStatus, "application/json", lastBody) }
+    return c.JSON(http.StatusBadGateway, echo.Map{"error": "no_available_target"})
+}
+
+func handleRouterNonStream(c echo.Context, app *App, clientModel string, payload map[string]any, endpoint string) error {
+    user, key, err := getUserFromAuth(c)
+    if err != nil { return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"}) }
+    keyID := uint(0); if key != nil { keyID = key.ID }
+    name := strings.TrimPrefix(strings.ToLower(clientModel), "router/")
+    var route FallbackRoute
+    if err := app.DB.Preload("Targets", func(db *gorm.DB) *gorm.DB { return db.Order("position ASC, id ASC") }).Where("enabled = ? AND name = ?", true, name).First(&route).Error; err != nil {
+        return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
+    }
+    msgCount := 0
+    if v, ok := payload["messages"]; ok { if arr, ok := v.([]any); ok { msgCount = len(arr) } }
+    body, _ := json.Marshal(payload)
+    var lastBody []byte
+    var lastStatus int
+    for _, t := range route.Targets {
+        var p Provider
+        if err := app.DB.Where("id = ? AND enabled = ?", t.ProviderID, true).First(&p).Error; err != nil { continue }
+        var pl map[string]any; _ = json.Unmarshal(body, &pl)
+        pl["model"] = t.Model
+        upBody, _ := json.Marshal(pl)
+        started := time.Now()
+        url := strings.TrimSuffix(p.BaseURL, "/") + endpoint
+        req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(upBody))
+        req.Header.Set("Content-Type", "application/json")
+        if p.APIKey != "" { req.Header.Set("Authorization", "Bearer "+p.APIKey) }
+        resp, rerr := http.DefaultClient.Do(req)
+        if rerr != nil {
+            logUsage(app, user.ID, keyID, p.ID, clientModel, 0, started, msgCount, 0, 0)
+            continue
+        }
+        defer resp.Body.Close()
+        b, _ := io.ReadAll(resp.Body)
+        if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+            var usage struct{ Usage struct{ PromptTokens int `json:"prompt_tokens"`; CompletionTokens int `json:"completion_tokens"` } `json:"usage"` }
+            _ = json.Unmarshal(b, &usage)
+            logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, usage.Usage.PromptTokens, usage.Usage.CompletionTokens)
+            return c.Blob(resp.StatusCode, "application/json", b)
+        }
+        if resp.StatusCode >= 500 {
+            lastBody = b; lastStatus = resp.StatusCode
+            logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, 0, 0)
+            continue
+        }
+        logUsage(app, user.ID, keyID, p.ID, clientModel, resp.StatusCode, started, msgCount, 0, 0)
+        return c.Blob(resp.StatusCode, "application/json", b)
+    }
+    if lastBody != nil && lastStatus != 0 { return c.Blob(lastStatus, "application/json", lastBody) }
+    return c.JSON(http.StatusBadGateway, echo.Map{"error": "no_available_target"})
 }
 
 func openaiChatCompletions(c echo.Context) error {
@@ -169,17 +282,27 @@ func openaiChatCompletions(c echo.Context) error {
     if err := json.NewDecoder(c.Request().Body).Decode(&payload); err != nil {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid json"})
     }
-    model, _ := payload["model"].(string)
-    if model == "" {
+    clientModel, _ := payload["model"].(string)
+    if clientModel == "" {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "model required"})
     }
+    app := getApp(c)
+    // Router fallback path
+    if strings.HasPrefix(strings.ToLower(clientModel), "router/") {
+        return handleRouterChat(c, app, clientModel, payload)
+    }
+    p, raw, ok := resolveQualifiedModel(app, clientModel)
+    if !ok {
+        return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
+    }
+    payload["model"] = raw
     // Pass through stream param if present
     stream := false
     if s, ok := payload["stream"].(bool); ok {
         stream = s
     }
     body, _ := json.Marshal(payload)
-    return forwardOpenAIWithStream(c, model, body, "/chat/completions", stream)
+    return forwardOpenAIWithStream(c, p, clientModel, body, "/chat/completions", stream)
 }
 
 func openaiCompletions(c echo.Context) error {
@@ -187,12 +310,21 @@ func openaiCompletions(c echo.Context) error {
     if err := json.NewDecoder(c.Request().Body).Decode(&payload); err != nil {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid json"})
     }
-    model, _ := payload["model"].(string)
-    if model == "" {
+    clientModel, _ := payload["model"].(string)
+    if clientModel == "" {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "model required"})
     }
+    app := getApp(c)
+    if strings.HasPrefix(strings.ToLower(clientModel), "router/") {
+        return handleRouterNonStream(c, app, clientModel, payload, "/completions")
+    }
+    p, raw, ok := resolveQualifiedModel(app, clientModel)
+    if !ok {
+        return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
+    }
+    payload["model"] = raw
     body, _ := json.Marshal(payload)
-    return forwardOpenAIWithStream(c, model, body, "/completions", false)
+    return forwardOpenAIWithStream(c, p, clientModel, body, "/completions", false)
 }
 
 func openaiEmbeddings(c echo.Context) error {
@@ -200,10 +332,19 @@ func openaiEmbeddings(c echo.Context) error {
     if err := json.NewDecoder(c.Request().Body).Decode(&payload); err != nil {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid json"})
     }
-    model, _ := payload["model"].(string)
-    if model == "" {
+    clientModel, _ := payload["model"].(string)
+    if clientModel == "" {
         return c.JSON(http.StatusBadRequest, echo.Map{"error": "model required"})
     }
+    app := getApp(c)
+    if strings.HasPrefix(strings.ToLower(clientModel), "router/") {
+        return handleRouterNonStream(c, app, clientModel, payload, "/embeddings")
+    }
+    p, raw, ok := resolveQualifiedModel(app, clientModel)
+    if !ok {
+        return c.JSON(http.StatusBadRequest, echo.Map{"error": "unknown model"})
+    }
+    payload["model"] = raw
     body, _ := json.Marshal(payload)
-    return forwardOpenAIWithStream(c, model, body, "/embeddings", false)
+    return forwardOpenAIWithStream(c, p, clientModel, body, "/embeddings", false)
 }

@@ -41,22 +41,25 @@ export default function Chat() {
   React.useEffect(() => {
     api('/models').then((data:any[]) => {
       // server returns array of { provider_id, provider_name, name }
-      const unique = Array.from(new Set(data.map((m:any) => m.name)))
+      // Build qualified ids: provider/name
+      const qualified = data.map((m:any) => `${String(m.provider_name || '').toLowerCase()}/${m.name}`)
+      // Do not de-duplicate by raw name; keep provider distinction
 
-      // Custom sort: prioritize gpt-5 > gpt-4 > gpt-3.5 > gpt-3, then by variant
+      // Custom sort based on the raw model id portion
       function parseModelId(id: string) {
-        // Extracts family and version for sorting
+        // Extracts family and version for sorting from the raw part
         // e.g. "gpt-4-0613" => { family: "gpt-4", version: "0613" }
         //      "gpt-3.5-turbo" => { family: "gpt-3.5-turbo", version: "" }
         //      "gpt-4" => { family: "gpt-4", version: "" }
         //      "gpt-5" => { family: "gpt-5", version: "" }
         //      "gpt-4-1106-preview" => { family: "gpt-4", version: "1106-preview" }
-        const match = id.match(/^(gpt-\d+(?:\.\d+)?(?:-[a-z]+)?)(?:-(.+))?$/i)
+        const raw = id.includes('/') ? id.split('/', 2)[1] : id
+        const match = raw.match(/^(gpt-\d+(?:\.\d+)?(?:-[a-z]+)?)(?:-(.+))?$/i)
         if (match) {
           return { family: match[1], version: match[2] || "" }
         }
         // fallback: treat the whole id as family
-        return { family: id, version: "" }
+        return { family: raw, version: "" }
       }
 
       function parseGptVersion(family: string): number {
@@ -85,12 +88,14 @@ export default function Chat() {
         if (ra !== rb) return rb - ra // higher version first
         if (pa.family !== pb.family) return pa.family.localeCompare(pb.family)
         // Same family: shorter id (base) first, then lexicographically
-        if (a.length !== b.length) return a.length - b.length
+        const ar = a.includes('/') ? a.split('/',2)[1] : a
+        const br = b.includes('/') ? b.split('/',2)[1] : b
+        if (ar.length !== br.length) return ar.length - br.length
         return a.localeCompare(b)
       }
 
-      unique.sort(compareModels)
-      const list = unique.map((id:string) => ({ id }))
+      qualified.sort(compareModels)
+      const list = qualified.map((id:string) => ({ id }))
       setModels(list)
       if (!model && list.length) setModel(list[0].id)
     }).catch(() => setModels([]))

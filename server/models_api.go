@@ -30,5 +30,12 @@ func listModels(c echo.Context) error {
             resp = append(resp, runtimeModel{ProviderID: p.ID, ProviderName: p.Name, Name: name})
         }
     }
+    // Include enabled router fallback entries for discovery purposes
+    var routes []FallbackRoute
+    if err := app.DB.Where("enabled = ?", true).Find(&routes).Error; err == nil {
+        for _, r := range routes {
+            resp = append(resp, runtimeModel{ProviderID: 0, ProviderName: "router", Name: r.Name})
+        }
+    }
     return c.JSON(http.StatusOK, resp)
 }

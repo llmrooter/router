@@ -103,20 +103,23 @@ export default function Models() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 dark:bg-slate-800/50 sticky top-0"><tr><th className="text-left p-2">Model</th><th className="text-right p-2">Actions</th></tr></thead>
                   <tbody>
-                    {sorted.map((name:string) => (
-                      <tr key={name} className="border-t border-slate-200 dark:border-slate-800">
-                        <td className="p-2 font-mono text-[12px]">{name}</td>
-                        <td className="p-2 text-right">
-                          <button
-                            className="rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs"
-                            onClick={() => copy(name)}
-                            title="Copy model id"
-                          >
-                            {copied === name ? 'Copied' : 'Copy'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {sorted.map((name:string) => {
+                      const fullId = `${String(p.name).toLowerCase()}/${name}`
+                      return (
+                        <tr key={name} className="border-t border-slate-200 dark:border-slate-800">
+                          <td className="p-2 font-mono text-[12px]">{name}</td>
+                          <td className="p-2 text-right">
+                            <button
+                              className="rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs"
+                              onClick={() => copy(fullId)}
+                              title="Copy provider-qualified model id"
+                            >
+                              {copied === fullId ? 'Copied' : 'Copy'}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

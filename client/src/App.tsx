@@ -9,6 +9,7 @@ import Users from './pages/Users'
 import Keys from './pages/Keys'
 import Account from './pages/Account'
 import Chat from './pages/Chat'
+import ModelsFallback from './pages/ModelsFallback'
 
 function useMe() {
   const [me, setMe] = React.useState<any>(null)
@@ -63,6 +64,11 @@ function Layout() {
               <svg className="h-4 w-4 opacity-80" viewBox="0 0 24 24" fill="currentColor"><path d="M3 7l9-4 9 4v6l-9 4-9-4V7zm9 2l6-2.67L12 3 6 6.33 12 9z"/></svg>
               Models
             </NavLink>
+            {me.role === 'admin' && (
+              <NavLink to="/models/fallback" className={({ isActive }) => `ml-6 group flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition ${isActive ? 'bg-indigo-50 text-brand ring-1 ring-inset ring-indigo-100 dark:bg-slate-800/60 dark:text-indigo-300 dark:ring-slate-700' : 'hover:bg-slate-100 text-slate-500 dark:text-slate-400 dark:hover:bg-slate-800'}`}>
+                Fallback
+              </NavLink>
+            )}
             <NavLink to="/keys" className={({ isActive }) => `group flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition ${isActive ? 'bg-indigo-50 text-brand ring-1 ring-inset ring-indigo-100 dark:bg-slate-800/60 dark:text-indigo-300 dark:ring-slate-700' : 'hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
               <svg className="h-4 w-4 opacity-80" viewBox="0 0 24 24" fill="currentColor"><path d="M12.65 10A5 5 0 1020 5a5 5 0 00-7.35 5zM2 20l7-7 2 2-7 7H2v-2z"/></svg>
               API Keys
@@ -93,6 +99,7 @@ function Layout() {
             <Route path="/keys" element={<Keys />} />
             <Route path="/providers" element={<Providers />} />
             <Route path="/models" element={<Models />} />
+            {me.role === 'admin' && <Route path="/models/fallback" element={<ModelsFallback />} />}
             <Route path="/users" element={<Users />} />
           </>}
           {mustChange && <Route path="*" element={<Account onUpdated={() => { setMe({ ...me, must_change_password: false }) }} me={me} />} />}
